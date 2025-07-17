@@ -49,12 +49,14 @@ class Database {
     }
     
     /**
+     * Méthode magique pour la désérialisation
+     */
+    public function __wakeup() {
+        $this->__construct();
+    }
+    
+    /**
      * Empêcher le clonage de l'objet
      */
     private function __clone() {}
-    
-    /**
-     * Empêcher la désérialisation de l'objet
-     */
-    private function __wakeup() {}
 } 

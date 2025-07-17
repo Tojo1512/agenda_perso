@@ -1,3 +1,5 @@
+DROP DATABASE IF EXISTS `bdd_agenda_perso`;
+
 CREATE DATABASE IF NOT EXISTS `bdd_agenda_perso`;
 USE `bdd_agenda_perso`;
 
@@ -43,12 +45,22 @@ CREATE TABLE emplois_du_temps (
     date_debut DATE NOT NULL,
     date_fin DATE NOT NULL,
     id_utilisateur INT NOT NULL,
+    -- id_tache supprimé pour gestion via table de liaison
     FOREIGN KEY (id_utilisateur) REFERENCES utilisateurs(id) ON DELETE CASCADE
+);
+
+-- Table de liaison emplois_du_temps <-> taches
+CREATE TABLE emploi_temps_taches (
+    id_emploi_du_temps INT NOT NULL,
+    id_tache INT NOT NULL,
+    PRIMARY KEY (id_emploi_du_temps, id_tache),
+    FOREIGN KEY (id_emploi_du_temps) REFERENCES emplois_du_temps(id) ON DELETE CASCADE,
+    FOREIGN KEY (id_tache) REFERENCES taches(id) ON DELETE CASCADE
 );
 
 CREATE TABLE evenements (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    titre VARCHAR(255) NOT NULL,
+    titre VARCHAR(255) NOT NULL, 
     description TEXT,
     date_debut DATETIME NOT NULL,
     date_fin DATETIME NOT NULL,
@@ -76,11 +88,13 @@ CREATE TABLE notifications (
 
 CREATE TABLE templates (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    id_utilisateur INT NOT NULL,
     nom VARCHAR(255) NOT NULL,
     description TEXT,
     contenu JSON,
     type VARCHAR(100),
-    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP
+    date_creation DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (id_utilisateur) REFERENCES utilisateurs(id) ON DELETE CASCADE
 );
 
 CREATE TABLE suggestions_planning (
@@ -101,18 +115,3 @@ CREATE TABLE statistiques (
     FOREIGN KEY (id_utilisateur) REFERENCES utilisateurs(id) ON DELETE CASCADE
 );
 
--- Insertion de données d'exemple pour les tests
-INSERT INTO utilisateurs (nom, prenom, email, mot_de_passe) 
-VALUES ('Dupont', 'Jean', 'jean.dupont@email.com', SHA2('motdepasse123', 256));
-
-INSERT INTO categories (nom, couleur, type, id_utilisateur) 
-VALUES 
-('Mathématiques', '#FF5733', 'scientifique', 1),
-('Français', '#33FF57', 'littéraire', 1),
-('Informatique', '#3357FF', 'scientifique', 1);
-
-INSERT INTO taches (titre, description, date_echeance, priorite, id_utilisateur, id_categorie) 
-VALUES 
-('Devoir de maths', 'Exercices 1 à 10 page 25', DATE_ADD(NOW(), INTERVAL 7 DAY), 'haute', 1, 1),
-('Dissertation', 'Sujet: La liberté dans les romans du XIXe siècle', DATE_ADD(NOW(), INTERVAL 14 DAY), 'moyenne', 1, 2),
-('Projet de programmation', 'Créer une application de gestion de tâches', DATE_ADD(NOW(), INTERVAL 30 DAY), 'haute', 1, 3);

@@ -11,11 +11,12 @@ Application web de gestion d'agenda et de tâches conçue spécifiquement pour l
 
 - **Personnalisation et accessibilité**
   - Thèmes personnalisables (mode sombre/clair)
-  - Templates pré-remplis pour différents types de projets
+  - Interface responsive adaptée à tous les appareils
 
 - **Gestion de temps et productivité**
-  - Suggestion du temps à passer par tâche
-  - Suggestion de planning basé sur les habitudes
+  - Emploi du temps hebdomadaire
+  - Visualisation des tâches par priorité
+  - Tableau de bord avec statistiques
 
 ## 🛠️ Installation
 
@@ -32,12 +33,12 @@ Application web de gestion d'agenda et de tâches conçue spécifiquement pour l
    git clone [url-du-depot] agenda_perso
    ```
 
-2. Importer la base de données :
-   ```
-   mysql -u [username] -p < bdd/script.sql
-   ```
+2. Créer une base de données MySQL nommée `bdd_agenda_perso`
 
-3. Configurer les paramètres de connexion à la base de données dans le fichier de configuration (à créer).
+3. Importer le script SQL :
+   ```
+   mysql -u root -p bdd_agenda_perso < bdd/script.sql
+   ```
 
 4. Accéder à l'application via :
    ```
@@ -49,43 +50,49 @@ Application web de gestion d'agenda et de tâches conçue spécifiquement pour l
 ```
 agenda_perso/
 ├── assets/           # Ressources statiques (CSS, JS, images)
-├── bdd/              # Scripts et schémas de base de données
-├── classes/          # Classes PHP du modèle
-├── config/           # Fichiers de configuration
-├── controllers/      # Contrôleurs de l'application
-├── templates/        # Templates pour l'affichage
-├── utils/            # Utilitaires et fonctions d'aide
+├── bdd/              # Scripts de base de données
+├── includes/         # Fichiers d'inclusion (header, footer, etc.)
+├── pages/            # Pages de l'application
 ├── index.php         # Point d'entrée principal
-├── README.md         # Documentation
-└── projet_guide.md   # Guide détaillé de développement
+└── README.md         # Documentation
 ```
 
-## 📝 Guide de développement
+## 👤 Comptes de test
 
-Le fichier `projet_guide.md` contient les détails complets sur :
-- La liste des tâches à accomplir
-- L'architecture détaillée du projet
-- Les classes et méthodes à implémenter
-- Le schéma de la base de données
-- Les flux de travail typiques
+Pour tester l'application, vous pouvez utiliser le compte suivant :
+- Email : jean.dupont@email.com
+- Mot de passe : motdepasse123
+
+Ou créer votre propre compte via la page d'inscription.
 
 ## 🔄 Flux de travail typiques
 
-1. **Création et gestion d'une tâche**
-   - L'étudiant se connecte à son compte
-   - Il accède à la section "Tâches"
-   - Il clique sur "Nouvelle tâche"
-   - Il remplit le formulaire et confirme
-   - Le système programme les notifications
+1. **Gestion des tâches**
+   - Créer des tâches avec date d'échéance et priorité
+   - Organiser les tâches par catégories
+   - Suivre l'avancement et marquer comme terminées
 
-2. **Utilisation des suggestions de planning**
-   - L'étudiant reçoit une notification de suggestion
-   - Il peut accepter, modifier ou refuser la suggestion
-   - S'il accepte, le planning est automatiquement mis à jour
+2. **Emploi du temps**
+   - Visualiser les événements par semaine
+   - Ajouter des cours et rendez-vous
+   - Naviguer entre les semaines
 
-## 👥 Contribution
+3. **Personnalisation**
+   - Changer le thème (clair/sombre)
+   - Modifier les informations du profil
+   - Consulter les statistiques personnelles
 
-Les contributions sont les bienvenues ! N'hésitez pas à :
-1. Fork le projet
-2. Créer une branche pour votre fonctionnalité
-3. Soumettre une pull request 
+## 📱 Compatibilité
+
+L'application est conçue pour fonctionner sur :
+- Ordinateurs de bureau
+- Tablettes
+- Smartphones
+
+Le design responsive s'adapte automatiquement à la taille de l'écran.
+
+## 🔒 Sécurité
+
+- Mots de passe hachés avec la fonction password_hash()
+- Protection contre les injections SQL avec PDO
+- Validation des données utilisateur 

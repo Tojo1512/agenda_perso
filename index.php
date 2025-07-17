@@ -14,19 +14,8 @@ define('DB_USER', 'root');
 define('DB_PASS', '');
 
 // Connexion à la base de données
-function connectDB() {
-    try {
-        $db = new PDO(
-            'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
-            DB_USER,
-            DB_PASS,
-            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
-        );
-        return $db;
-    } catch (PDOException $e) {
-        die('Erreur de connexion à la base de données');
-    }
-}
+require_once __DIR__ . '/includes/db.php';
+
 
 // Gérer le changement de thème
 if (isset($_GET['action']) && $_GET['action'] === 'changer_theme') {
@@ -54,6 +43,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'changer_theme') {
 
 // Définir la page par défaut
 $page = isset($_GET['page']) ? $_GET['page'] : 'accueil';
+$action = isset($_GET['action']) ? $_GET['action'] : '';
 
 // En-tête HTML
 include 'includes/header.php';
@@ -98,6 +88,7 @@ switch ($page) {
             header('Location: index.php?page=connexion');
             exit;
         }
+        // Pas besoin de redirection spéciale pour l'action ajouter car c'est géré dans taches.php
         include 'pages/taches.php';
         break;
     

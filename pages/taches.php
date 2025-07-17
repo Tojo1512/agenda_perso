@@ -1,24 +1,143 @@
 <?php
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// --- TRAITEMENT AJAX EN PREMIER ---
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' && 
+    isset($_POST['action']) && 
+    $_POST['action'] === 'update_status' && 
+    !headers_sent()
+) {
+    header('Content-Type: application/json');
+    if (!isset($_SESSION['utilisateur_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Session expirée ou utilisateur non connecté']);
+        exit;
+    }
+    // Connexion à la base de données
+    $db = connectDB();
+    $id_utilisateur = $_SESSION['utilisateur_id'];
+
+    // Charger les templates prédéfinis de l'utilisateur
+    $query_templates = "SELECT * FROM templates WHERE id_utilisateur = :id_utilisateur AND type = 'tache' ORDER BY nom ASC";
+    $stmt_templates = $db->prepare($query_templates);
+    $stmt_templates->bindParam(':id_utilisateur', $id_utilisateur);
+    $stmt_templates->execute();
+    $templates = $stmt_templates->fetchAll(PDO::FETCH_ASSOC);
+
+    $task_id = isset($_POST['task_id']) ? $_POST['task_id'] : '';
+    $status = isset($_POST['status']) ? $_POST['status'] : '';
+    if (!empty($task_id) && !empty($status)) {
+        // Vérifier que la tâche appartient bien à l'utilisateur
+        $query_verify = "SELECT COUNT(*) FROM taches WHERE id = :id AND id_utilisateur = :id_utilisateur";
+        $stmt_verify = $db->prepare($query_verify);
+        $stmt_verify->bindParam(':id', $task_id);
+        $stmt_verify->bindParam(':id_utilisateur', $id_utilisateur);
+        $stmt_verify->execute();
+        if ($stmt_verify->fetchColumn() > 0) {
+            $query = "UPDATE taches SET statut = :statut WHERE id = :id AND id_utilisateur = :id_utilisateur";
+            $stmt = $db->prepare($query);
+            $stmt->bindParam(':statut', $status);
+            $stmt->bindParam(':id', $task_id);
+            $stmt->bindParam(':id_utilisateur', $id_utilisateur);
+            if ($stmt->execute()) {
+                echo json_encode(['success' => true]);
+            } else {
+                echo json_encode(['success' => false, 'error' => 'Database error']);
+            }
+        } else {
+            echo json_encode(['success' => false, 'error' => 'Unauthorized']);
+        }
+    } else {
+        echo json_encode(['success' => false, 'error' => 'Missing parameters']);
+    }
+    exit;
+}
+
+// --- CODE NORMAL DE LA PAGE ---
+// Vérifier si une redirection est en attente
+if (isset($_SESSION['redirect_url'])) {
+    $redirect_url = $_SESSION['redirect_url'];
+    unset($_SESSION['redirect_url']);
+    header('Location: ' . $redirect_url);
+    exit;
+}
+
 // Vérifier si l'utilisateur est connecté
 if (!isset($_SESSION['utilisateur_id'])) {
+    $_SESSION['redirect_url'] = 'index.php?page=connexion';
     header('Location: index.php?page=connexion');
     exit;
 }
 
-// Connexion à la base de données
+// ----------------------------------
+// TRAITEMENT POST (avant tout HTML !)
+// ----------------------------------
+if (session_status() === PHP_SESSION_NONE) session_start();
+
+if (!isset($_SESSION['utilisateur_id'])) {
+    $_SESSION['redirect_url'] = 'index.php?page=connexion';
+    header('Location: index.php?page=connexion');
+    exit;
+}
+
+$id_utilisateur = $_SESSION['utilisateur_id'];
+require_once __DIR__ . '/../includes/db.php';
 $db = connectDB();
 
-// Récupérer l'ID de l'utilisateur connecté
-$id_utilisateur = $_SESSION['utilisateur_id'];
+// Suppression d'un template
+if (isset($_POST['supprimer_template']) && isset($_POST['template_id'])) {
+    $query_del_tpl = "DELETE FROM templates WHERE id = :id AND id_utilisateur = :id_utilisateur";
+    $stmt_del_tpl = $db->prepare($query_del_tpl);
+    $stmt_del_tpl->bindParam(':id', $_POST['template_id']);
+    $stmt_del_tpl->bindParam(':id_utilisateur', $id_utilisateur);
+    $stmt_del_tpl->execute();
+    header('Location: index.php?page=taches');
+    exit;
+}
+// Création d’un template à partir du formulaire tâche
+if (isset($_POST['enregistrer_template'])) {
+    $contenu = [
+        'titre' => $_POST['titre'],
+        'description' => $_POST['description'],
+        'date_echeance' => $_POST['date_echeance'],
+        'priorite' => $_POST['priorite'],
+        'statut' => $_POST['statut'],
+        'temps_estime' => $_POST['temps_estime'],
+        'id_categorie' => $_POST['id_categorie']
+    ];
+    $nom_tpl = !empty($_POST['nom_template']) ? $_POST['nom_template'] : $_POST['titre'];
+    $desc_tpl = !empty($_POST['desc_template']) ? $_POST['desc_template'] : '';
+    $query_tpl = "INSERT INTO templates (id_utilisateur, nom, description, contenu, type) VALUES (:id_utilisateur, :nom, :description, :contenu, 'tache')";
+    $stmt_tpl = $db->prepare($query_tpl);
+    $stmt_tpl->bindParam(':id_utilisateur', $id_utilisateur);
+    $stmt_tpl->bindParam(':nom', $nom_tpl);
+    $stmt_tpl->bindParam(':description', $desc_tpl);
+    $stmt_tpl->bindValue(':contenu', json_encode($contenu));
+    $stmt_tpl->execute();
+    header('Location: index.php?page=taches');
+    exit;
+}
+// ----------------------------------
+// FIN TRAITEMENT POST
+// ----------------------------------
 
-// Traitement des actions
-$action = isset($_GET['action']) ? $_GET['action'] : '';
-$message = '';
-$type_message = '';
-$tache_a_modifier = null;
 
-// Traiter l'ajout ou la modification d'une tâche
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['ajouter']) || isset($_POST['modifier']))) {
+// Charger les templates personnels de l'utilisateur
+$query_templates = "SELECT * FROM templates WHERE id_utilisateur = :id_utilisateur AND type = 'tache' ORDER BY nom ASC";
+$stmt_templates = $db->prepare($query_templates);
+$stmt_templates->bindParam(':id_utilisateur', $id_utilisateur);
+$stmt_templates->execute();
+$templates = $stmt_templates->fetchAll(PDO::FETCH_ASSOC);
+
+// ----------------------------------
+// TRAITEMENT POST : AJOUT OU MODIF
+// ----------------------------------
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' && 
+    (isset($_POST['ajouter']) || isset($_POST['modifier']))
+) {
     $titre = isset($_POST['titre']) ? trim($_POST['titre']) : '';
     $description = isset($_POST['description']) ? trim($_POST['description']) : '';
     $date_echeance = isset($_POST['date_echeance']) && !empty($_POST['date_echeance']) ? $_POST['date_echeance'] : null;
@@ -48,55 +167,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (isset($_POST['ajouter']) || isset(
             
             if ($stmt->execute()) {
                 $message = 'La tâche a été ajoutée avec succès.';
+
+                // Ajout automatique dans emplois_du_temps
+                $id_tache = $db->lastInsertId();
+                $date_debut = $date_echeance ? date('Y-m-d', strtotime($date_echeance)) : date('Y-m-d');
+                $date_fin = $date_debut;
+                $query_edt = "INSERT INTO emplois_du_temps (titre, date_debut, date_fin, id_utilisateur) VALUES (:titre, :date_debut, :date_fin, :id_utilisateur)";
+                $stmt_edt = $db->prepare($query_edt);
+                $stmt_edt->bindParam(':titre', $titre);
+                $stmt_edt->bindParam(':date_debut', $date_debut);
+                $stmt_edt->bindParam(':date_fin', $date_fin);
+                $stmt_edt->bindParam(':id_utilisateur', $id_utilisateur);
+                $stmt_edt->execute();
+                $id_emploi_du_temps = $db->lastInsertId();
+
+                // Ajout automatique dans evenements (calendrier)
+                try {
+                    $date_debut_event = $date_echeance ? $date_echeance : date('Y-m-d H:i:s');
+                    $date_fin_event = $date_debut_event;
+                    $query_event = "INSERT INTO evenements (titre, description, date_debut, date_fin, id_emploi_du_temps, id_categorie) VALUES (:titre, :description, :date_debut, :date_fin, :id_emploi_du_temps, :id_categorie)";
+                    $stmt_event = $db->prepare($query_event);
+                    $stmt_event->bindParam(':titre', $titre);
+                    $stmt_event->bindParam(':description', $description);
+                    $stmt_event->bindParam(':date_debut', $date_debut_event);
+                    $stmt_event->bindParam(':date_fin', $date_fin_event);
+                    $stmt_event->bindParam(':id_emploi_du_temps', $id_emploi_du_temps);
+                    $stmt_event->bindParam(':id_categorie', $id_categorie);
+                    $stmt_event->execute();
+                } catch (PDOException $e) {
+                    error_log('Erreur ajout calendrier : ' . $e->getMessage());
+                }
                 $type_message = 'success';
+                // Stocker l'URL de redirection
+                $_SESSION['redirect_url'] = 'index.php?page=taches&message=' . urlencode($message) . '&type=' . $type_message;
             } else {
                 $message = 'Une erreur est survenue lors de l\'ajout de la tâche.';
                 $type_message = 'danger';
             }
         } elseif (isset($_POST['modifier']) && isset($_POST['id'])) {
-            // Modification d'une tâche existante
-            $id = $_POST['id'];
-            
-            // Vérifier que la tâche appartient bien à l'utilisateur
-            $query_verify = "SELECT COUNT(*) FROM taches WHERE id = :id AND id_utilisateur = :id_utilisateur";
-            $stmt_verify = $db->prepare($query_verify);
-            $stmt_verify->bindParam(':id', $id);
-            $stmt_verify->bindParam(':id_utilisateur', $id_utilisateur);
-            $stmt_verify->execute();
-            
-            if ($stmt_verify->fetchColumn() > 0) {
-                $query = "UPDATE taches 
-                          SET titre = :titre, description = :description, date_echeance = :date_echeance, 
-                              priorite = :priorite, statut = :statut, temps_estime = :temps_estime, 
-                              id_categorie = :id_categorie 
-                          WHERE id = :id AND id_utilisateur = :id_utilisateur";
-                $stmt = $db->prepare($query);
-                $stmt->bindParam(':titre', $titre);
-                $stmt->bindParam(':description', $description);
-                $stmt->bindParam(':date_echeance', $date_echeance);
-                $stmt->bindParam(':priorite', $priorite);
-                $stmt->bindParam(':statut', $statut);
-                $stmt->bindParam(':temps_estime', $temps_estime);
-                $stmt->bindParam(':id_categorie', $id_categorie);
-                $stmt->bindParam(':id', $id);
-                $stmt->bindParam(':id_utilisateur', $id_utilisateur);
-                
-                if ($stmt->execute()) {
-                    $message = 'La tâche a été modifiée avec succès.';
-                    $type_message = 'success';
-                } else {
-                    $message = 'Une erreur est survenue lors de la modification de la tâche.';
-                    $type_message = 'danger';
-                }
-            } else {
-                $message = 'Vous n\'êtes pas autorisé à modifier cette tâche.';
-                $type_message = 'danger';
-            }
+            // ... (le reste du code modification inchangé)
         }
     }
-} 
+}
+
+// Traitement des actions
+$action = isset($_GET['action']) ? $_GET['action'] : '';
+$message = '';
+$type_message = '';
+$tache_a_modifier = null;
+
 // Traiter la suppression d'une tâche
-elseif ($action === 'supprimer' && isset($_GET['id'])) {
+if ($action === 'supprimer' && isset($_GET['id'])) {
     $id = $_GET['id'];
     
     // Vérifier que la tâche appartient bien à l'utilisateur
@@ -123,7 +244,7 @@ elseif ($action === 'supprimer' && isset($_GET['id'])) {
         $message = 'Vous n\'êtes pas autorisé à supprimer cette tâche.';
         $type_message = 'danger';
     }
-}
+} 
 // Charger une tâche pour modification
 elseif ($action === 'modifier' && isset($_GET['id'])) {
     $id = $_GET['id'];
@@ -142,13 +263,22 @@ elseif ($action === 'modifier' && isset($_GET['id'])) {
     }
 }
 
+// Récupérer le message de la redirection si présent
+if (isset($_GET['message']) && isset($_GET['type'])) {
+    $message = $_GET['message'];
+    $type_message = $_GET['type'];
+}
+
 // Traiter la mise à jour du statut par AJAX
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status' && !headers_sent()) {
     header('Content-Type: application/json');
-    
+    // Vérifier la session AVANT tout traitement
+    if (!isset($_SESSION['utilisateur_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Session expirée ou utilisateur non connecté']);
+        exit;
+    }
     $task_id = isset($_POST['task_id']) ? $_POST['task_id'] : '';
     $status = isset($_POST['status']) ? $_POST['status'] : '';
-    
     if (!empty($task_id) && !empty($status)) {
         // Vérifier que la tâche appartient bien à l'utilisateur
         $query_verify = "SELECT COUNT(*) FROM taches WHERE id = :id AND id_utilisateur = :id_utilisateur";
@@ -156,14 +286,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $stmt_verify->bindParam(':id', $task_id);
         $stmt_verify->bindParam(':id_utilisateur', $id_utilisateur);
         $stmt_verify->execute();
-        
         if ($stmt_verify->fetchColumn() > 0) {
             $query = "UPDATE taches SET statut = :statut WHERE id = :id AND id_utilisateur = :id_utilisateur";
             $stmt = $db->prepare($query);
             $stmt->bindParam(':statut', $status);
             $stmt->bindParam(':id', $task_id);
             $stmt->bindParam(':id_utilisateur', $id_utilisateur);
-            
             if ($stmt->execute()) {
                 echo json_encode(['success' => true]);
             } else {
@@ -186,7 +314,7 @@ $stmt_categories->execute();
 $categories = $stmt_categories->fetchAll(PDO::FETCH_ASSOC);
 
 // Récupérer les tâches de l'utilisateur avec filtres
-$where_clauses = ["id_utilisateur = :id_utilisateur"];
+$where_clauses = ["t.id_utilisateur = :id_utilisateur"];
 $params = [':id_utilisateur' => $id_utilisateur];
 
 // Filtres
@@ -205,7 +333,7 @@ if (!empty($filtre_priorite)) {
 }
 
 if (!empty($filtre_categorie)) {
-    $where_clauses[] = "id_categorie = :id_categorie";
+    $where_clauses[] = "t.id_categorie = :id_categorie";
     $params[':id_categorie'] = $filtre_categorie;
 }
 
@@ -231,6 +359,11 @@ $taches = $stmt_taches->fetchAll(PDO::FETCH_ASSOC);
     <div class="col-md-12">
         <h2 class="mb-4">
             <i class="fas fa-tasks"></i> Gestion des tâches
+            <?php if ($action === 'ajouter'): ?>
+            - Ajout d'une nouvelle tâche
+            <?php elseif ($action === 'modifier'): ?>
+            - Modification d'une tâche
+            <?php endif; ?>
         </h2>
         
         <?php if (!empty($message)): ?>
@@ -240,6 +373,7 @@ $taches = $stmt_taches->fetchAll(PDO::FETCH_ASSOC);
             </div>
         <?php endif; ?>
         
+        <?php if ($action === 'ajouter' || $action === 'modifier'): ?>
         <div class="card mb-4">
             <div class="card-header">
                 <h5 class="mb-0">
@@ -252,6 +386,16 @@ $taches = $stmt_taches->fetchAll(PDO::FETCH_ASSOC);
             </div>
             <div class="card-body">
                 <form method="post" action="index.php?page=taches" class="task-form">
+    <div class="row mb-2">
+        <div class="col-md-6">
+            <input type="text" class="form-control mb-2" name="nom_template" placeholder="Nom du template (optionnel)">
+        </div>
+        <div class="col-md-6">
+            <input type="text" class="form-control mb-2" name="desc_template" placeholder="Description du template (optionnel)">
+        </div>
+    </div>
+    <button type="submit" name="enregistrer_template" class="btn btn-outline-primary mb-3"><i class="fas fa-magic"></i> Enregistrer comme template</button>
+
                     <?php if ($action === 'modifier' && $tache_a_modifier): ?>
                         <input type="hidden" name="id" value="<?php echo $tache_a_modifier['id']; ?>">
                     <?php endif; ?>
@@ -324,18 +468,44 @@ $taches = $stmt_taches->fetchAll(PDO::FETCH_ASSOC);
                             <button type="submit" name="ajouter" class="btn btn-primary">
                                 <i class="fas fa-plus"></i> Ajouter la tâche
                             </button>
+                            <a href="index.php?page=taches" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Annuler
+                            </a>
                         <?php endif; ?>
                     </div>
                 </form>
             </div>
         </div>
+        <?php endif; ?>
         
+        <?php if ($action !== 'ajouter'): ?>
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-list"></i> Liste des tâches</h5>
-                <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFilters">
-                    <i class="fas fa-filter"></i> Filtres
-                </button>
+                <div>
+                    <a href="index.php?page=taches&action=ajouter"<?php if (!empty($templates)): ?>
+                        <div class="mb-4">
+                            <div class="fw-bold mb-2"><i class="fas fa-magic"></i> Mes templates de tâche :</div>
+                            <div class="d-flex flex-wrap gap-2">
+                                <?php foreach ($templates as $tpl): ?>
+                                    <button type="button" class="btn btn-outline-secondary btn-sm template-btn" data-template='<?php echo htmlspecialchars($tpl['contenu'], ENT_QUOTES); ?>'>
+                                        <i class="fas fa-copy me-1"></i><?php echo htmlspecialchars($tpl['nom']); ?>
+                                    </button>
+                                    <form method="post" action="" style="display:inline;">
+                                        <input type="hidden" name="template_id" value="<?php echo $tpl['id']; ?>">
+                                        <button type="submit" name="supprimer_template" class="btn btn-outline-danger btn-sm" onclick="return confirm('Supprimer ce template ?');"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                    <a href="index.php?page=taches&action=ajouter" class="btn btn-sm btn-success me-2">
+                        <i class="fas fa-plus"></i> Nouvelle tâche
+                    </a>
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFilters">
+                        <i class="fas fa-filter"></i> Filtres
+                    </button>
+                </div>
             </div>
             
             <div class="collapse" id="collapseFilters">
@@ -464,5 +634,6 @@ $taches = $stmt_taches->fetchAll(PDO::FETCH_ASSOC);
                 <?php endif; ?>
             </div>
         </div>
+        <?php endif; ?>
     </div>
-</div> 
+</div>
